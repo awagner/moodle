@@ -5401,3 +5401,87 @@ abstract class restore_questions_activity_structure_step extends restore_activit
         }
     }
 }
+
+/**
+ * Step to restore the role renamings within a course.
+ *
+ * @copyright 2016 Andreas Wagner
+ * @license   http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
+ */
+class restore_rolenames_structure_step extends restore_structure_step {
+
+    /**
+     * Function that will return the structure to be processed by this restore_step.
+     *
+     * @return array list of restore path elements
+     */
+    protected function define_structure() {
+        $role = new restore_path_element('role', '/roles_definition/role');
+        return array($role);
+    }
+
+    /**
+     * Process the read role definition (from roles.xml in root dir).
+     *
+     * @param array $data
+     */
+    protected function process_role($data) {
+        global $DB;
+
+        $role = (object) $data;
+
+        if (empty($role->nameincourse)) {
+            return;
+        }
+
+        // Check whether this role was already mapped by annotation.
+        if ($newroleid = $this->get_mappingid('role', $role->id)) {
+            return;
+        }
+
+        // Try to match the given role to existing role.
+        if (!$matchingroleid = $this->get_matching_role($role)) {
+            return;
+        }
+
+        $contextid = context_course::instance($this->get_courseid())->id;
+        if ($exists = $DB->get_record('role_names', array('roleid' => $matchingroleid, 'contextid' => $contextid))) {
+            return;
+        }
+
+        // Insert new role name for course context.
+        $rolename = new \stdClass();
+        $rolename->roleid = $matchingroleid;
+        $rolename->contextid = $contextid;
+        $rolename->name = $role->nameincourse;
+        $DB->insert_record('role_names', $rolename);
+    }
+
+    /**
+     * Try to get matching role id by old id, shortname or archetype.
+     *
+     * @param object $role role definition read from roles.xml
+     * @return int the role id or 0, when no suitable role is found.
+     */
+    protected function get_matching_role($role) {
+        global $DB;
+
+        // Samesite, use unchanged roleid.
+        if ($this->task->is_samesite()) {
+            return $role->id;
+        }
+
+        // Match by shortname.
+        if ($rec = $DB->get_record('role', array('shortname' => $role->shortname), 'id', IGNORE_MULTIPLE)) {
+            return $rec->id;
+        }
+
+        // Match by archetype.
+        if ($rec = $DB->get_record('role', array('archetype' => $role->archetype), 'id', IGNORE_MULTIPLE)) {
+            return $rec->id;
+        }
+
+        return 0;
+    }
+}
+

@@ -605,14 +605,14 @@ class backup_final_roles_structure_step extends backup_structure_step {
 
         $rolesdef->add_child($role);
 
-        // Define sources
+        // Define sources (annotated or renamed roles).
 
         $role->set_source_sql("SELECT r.*, rn.name AS nameincourse
                                  FROM {role} r
-                                 JOIN {backup_ids_temp} bi ON r.id = bi.itemid
+                            LEFT JOIN {backup_ids_temp} bi ON r.id = bi.itemid
                             LEFT JOIN {role_names} rn ON r.id = rn.roleid AND rn.contextid = ?
-                                WHERE bi.backupid = ?
-                                  AND bi.itemname = 'rolefinal'", array(backup::VAR_CONTEXTID, backup::VAR_BACKUPID));
+                                WHERE ((bi.backupid = ? AND bi.itemname = 'rolefinal') OR (rn.roleid IS NOT NULL))",
+                                array(backup::VAR_CONTEXTID, backup::VAR_BACKUPID));
 
         // Return main element (rolesdef)
         return $rolesdef;

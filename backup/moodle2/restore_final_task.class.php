@@ -90,6 +90,10 @@ class restore_final_task extends restore_task {
             $this->add_step(new restore_course_logstores_structure_step('course_logstores', 'course/logstores.xml'));
         }
 
+        // Restore the renaming of roles from roles.xml.
+        // This intentional placed in this class, because we rename roles, that are not in course context, too.
+        $this->add_step(new restore_rolenames_structure_step('role_names', 'roles.xml'));
+
         // Review all the executed tasks having one after_restore method
         // executing it to perform some final adjustments of information
         // not available when the task was executed.
