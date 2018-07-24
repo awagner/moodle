@@ -327,3 +327,33 @@ span.unread {
 .path-mod-forum article .nav .nav-link + .nav-link {
     border-left: 1px solid #ddd;
 }
+
+#forum-inlineform .col-md-3 {
+    display: none;
+}
+
+#forum-inlineform {
+    margin: 10px 0;
+}
+
+#forum-inlineform .col-md-9 {
+    padding-left: 0;
+}
+
+a.forum-link-disable,
+a.forum-link-disable:focus,
+a.forum-link-disable:active,
+a.forum-link-disable:visited {
+    color: lightgray;
+}
+
+#forum-inlineform #id_morereplyingoptions-div {
+    float: right;
+    margin: 0 15px 0 0;
+
+}
+
+#forum-inlineform .col-md-9 {
+    flex: 0 0 100%;
+    max-width: 100%;
+}

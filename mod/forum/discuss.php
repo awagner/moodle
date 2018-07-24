@@ -394,11 +394,31 @@ if ($move == -1 and confirm_sesskey()) {
 }
 
 $canrate = has_capability('mod/forum:rate', $modcontext);
+
+echo \html_writer::start_div('', ['id' => 'forum-discussion-container']);
 forum_print_discussion($course, $cm, $forum, $discussion, $post, $displaymode, $canreply, $canrate);
+echo \html_writer::end_div();
 
 echo $neighbourlinks;
 
 // Add the subscription toggle JS.
 $PAGE->requires->yui_module('moodle-mod_forum-subscriptiontoggle', 'Y.M.mod_forum.subscriptiontoggle.init');
+
+// Render a hidden inline postform.
+if (\mod_forum\blockquotes::can_edit_inline()) {
+    $params = [
+        'discussion' => $discussion,
+        'course' => $course,
+        'cm' => $cm,
+        'coursecontext' => \context_course::instance($course->id),
+        'modcontext' => $modcontext,
+        'forum' => $forum,
+        'post' => (object) ['parent' => 0],
+        'subscribe' => \mod_forum\subscriptions::is_subscribed($USER->id, $forum, null, $cm),
+        'thresholdwarning' => forum_check_throttling($forum, $cm),
+        'edit' => false
+    ];
+    echo $PAGE->get_renderer('forum')->render_inline_edit_form($params);
+}
 
 echo $OUTPUT->footer();

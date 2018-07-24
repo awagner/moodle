@@ -84,7 +84,8 @@ $functions = array(
         'description' => 'Create new posts into an existing discussion.',
         'type' => 'write',
         'capabilities' => 'mod/forum:replypost',
-        'services' => array(MOODLE_OFFICIAL_MOBILE_SERVICE)
+        'services' => array(MOODLE_OFFICIAL_MOBILE_SERVICE),
+        'ajax' => true
     ),
 
     'mod_forum_add_discussion' => array(
@@ -104,5 +105,31 @@ $functions = array(
         'description' => 'Check if the current user can add discussions in the given forum (and optionally for the given group).',
         'type' => 'read',
         'services' => array(MOODLE_OFFICIAL_MOBILE_SERVICE)
+    ),
+
+    // Additional services for inline editing.
+    'mod_forum_render_forum_discussion' => array(
+        'classname' => 'mod_forum_external',
+        'methodname' => 'render_forum_discussion',
+        'classpath' => 'mod/forum/externallib.php',
+        'description' => 'Render a discussion',
+        'type' => 'read',
+        'ajax' => true
+    ),
+    'mod_forum_update_discussion_post' => array(
+        'classname' => 'mod_forum_external',
+        'methodname' => 'update_discussion_post',
+        'classpath' => 'mod/forum/externallib.php',
+        'description' => 'Update a post',
+        'type' => 'write',
+        'ajax' => true
+    ),
+    'mod_forum_get_post_inline_editor' => array(
+        'classname' => 'mod_forum_external',
+        'methodname' => 'get_post_inline_editor',
+        'classpath' => 'mod/forum/externallib.php',
+        'description' => 'Prepare inline editior for a post',
+        'type' => 'read',
+        'ajax' => true
     ),
 );

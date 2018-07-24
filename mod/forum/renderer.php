@@ -246,4 +246,81 @@ class mod_forum_renderer extends plugin_renderer_base {
     public function render_big_search_form(\mod_forum\output\big_search_form $form) {
         return $this->render_from_template('mod_forum/big_search_form', $form->export_for_template($this));
     }
+
+    /**
+     * Render a quoted message according to the settings.
+     *
+     * @param string $message
+     * @return string
+     */
+    public function render_quoted_message($message) {
+        return \html_writer::tag('blockquote', $message).\html_writer::empty_tag('br');
+    }
+
+    /**
+     * Render an inline edit form.
+     *
+     * @param array $formparams for the form
+     * @return string
+     */
+    public function render_inline_edit_form($formparams) {
+        global $USER;
+
+        $discussion = $formparams['discussion'];
+        $coursecontext = $formparams['coursecontext'];
+        $forum = $formparams['forum'];
+        $cm = $formparams['cm'];
+
+        $manageactivities = has_capability('moodle/course:manageactivities', $coursecontext);
+        if (\mod_forum\subscriptions::subscription_disabled($forum) && !$manageactivities) {
+            // User does not have permission to subscribe to this discussion at all.
+            $discussionsubscribe = false;
+        } else if (\mod_forum\subscriptions::is_forcesubscribed($forum)) {
+            // User does not have permission to unsubscribe from this discussion at all.
+            $discussionsubscribe = true;
+        } else {
+            if (isset($discussion) && \mod_forum\subscriptions::is_subscribed($USER->id, $forum, $discussion->id, $cm)) {
+                // User is subscribed to the discussion - continue the subscription.
+                $discussionsubscribe = true;
+            } else if (!isset($discussion) && \mod_forum\subscriptions::is_subscribed($USER->id, $forum, null, $cm)) {
+                // Starting a new discussion, and the user is subscribed to the forum - subscribe to the discussion.
+                $discussionsubscribe = true;
+            } else {
+                // User is not subscribed to either forum or discussion. Follow user preference.
+                $discussionsubscribe = $USER->autosubscribe;
+            }
+        }
+
+        $html = '';
+
+        // Prepare markup of inline post form.
+        $picture = html_writer::div('', 'left picture', ['id' => 'forum-inlineform-picture']);
+
+        $inlineform = new \mod_forum\post_inline_form(null, $formparams, 'post', '', array('id' => 'forum-inlineform'));
+
+        $data = [];
+        $data['pinned'] = (!empty($discussion->pinned));
+        $data['discussionsubscribe'] = $discussionsubscribe;
+        $inlineform->set_data($data);
+
+        $topic = html_writer::div($inlineform->render(), 'topic');
+
+        $row = html_writer::div($picture . $topic, 'row');
+        $html .= html_writer::div($row, 'forumpost', ['id' => 'forum-inlineform-wrapper']);
+
+        // Render Information about the current user.
+        $authorpic = $this->output->user_picture($USER, ['courseid' => $formparams['course']->id]);
+        $html .= \html_writer::tag('div', $authorpic, ['id' => 'forum-inlineform-authorpicture']);
+        $html .= \html_writer::tag('div', fullname($USER), ['id' => 'forum-inlineform-authorname']);
+
+        $args = [
+            'discussionid' => $discussion->id,
+            'sesskey' => sesskey()
+        ];
+        $this->page->requires->js_call_amd('mod_forum/inlineediting', 'init', array($args));
+
+        // Wrap all together into a hidden container.
+        return \html_writer::div($html, '', ['id' => 'forum-inlineform-container', 'style' => 'display:none']);
+    }
+
 }

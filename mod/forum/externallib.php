@@ -1189,4 +1189,443 @@ class mod_forum_external extends external_api {
         );
     }
 
+    /**
+     * Returns description of method parameters
+     *
+     * @return external_function_parameters
+     * @since Moodle 3.6
+     */
+    public static function render_forum_discussion_parameters() {
+        return new external_function_parameters(
+            array(
+            'discussionid' => new external_value(PARAM_INT, 'discussion id', VALUE_DEFAULT, 0),
+            'postid' => new external_value(PARAM_INT, 'post id', VALUE_DEFAULT, 0)
+            )
+        );
+    }
+
+    /**
+     * Render a forum discussion for being loaded via AJAX
+     *
+     * @param int $discussionid the discussion id
+     * @param int $postid the id of a post
+     * @return array
+     * @since Moodle 3.6
+     * @throws moodle_exception
+     */
+    public static function render_forum_discussion($discussionid, $postid) {
+        global $DB, $CFG, $USER;
+        require_once($CFG->dirroot . "/mod/forum/lib.php");
+
+        $params = self::validate_parameters(self::render_forum_discussion_parameters(), array(
+                'discussionid' => $discussionid,
+                'postid' => $postid
+        ));
+        $warnings = array();
+
+        if ((!$postid) && (!$discussionid)) {
+            print_error('At least one of the parameters must be set.');
+        }
+
+        if ($postid) {
+            $post = $DB->get_record('forum_posts', array('id' => $postid), '*', MUST_EXIST);
+            $discussionid = $post->discussion;
+        }
+
+        $discussion = $DB->get_record('forum_discussions', array('id' => $discussionid), '*', MUST_EXIST);
+        $forum = $DB->get_record('forum', array('id' => $discussion->forum), '*', MUST_EXIST);
+        list($course, $cm) = get_course_and_cm_from_instance($forum, 'forum');
+        $cm = get_coursemodule_from_instance('forum', $forum->id, $course->id, false, MUST_EXIST);
+
+        // Validate the module context. It checks everything that affects the module visibility (including groupings, etc..).
+        $modcontext = context_module::instance($cm->id);
+        self::validate_context($modcontext);
+
+        require_capability('mod/forum:viewdiscussion', $modcontext, null, true, 'noviewdiscussionspermission', 'forum');
+
+        $canreply = forum_user_can_post($forum, $discussion, $USER, $cm, $course, $modcontext);
+        $canrate = has_capability('mod/forum:rate', $modcontext);
+        $displaymode = get_user_preferences('forum_displaymode', $CFG->forum_displaymode);
+
+        $parent = 0;
+        if ($parent) {
+            // If flat AND parent, then force nested display this time.
+            if ($displaymode == FORUM_MODE_FLATOLDEST or $displaymode == FORUM_MODE_FLATNEWEST) {
+                $displaymode = FORUM_MODE_NESTED;
+            }
+        } else {
+            $parent = $discussion->firstpost;
+        }
+
+        if (!$post = forum_get_post_full($parent)) {
+            print_error("notexists", 'forum', "$CFG->wwwroot/mod/forum/view.php?f=$forum->id");
+        }
+
+        ob_start();
+        forum_print_discussion($course, $cm, $forum, $discussion, $post, $displaymode, $canreply, $canrate);
+
+        $result = array();
+        $result['status'] = true;
+        $result['html'] = ob_get_clean();
+        $result['warnings'] = $warnings;
+        return $result;
+    }
+
+    /**
+     * Returns description of method result value
+     *
+     * @return external_description
+     * @since Moodle 3.6
+     */
+    public static function render_forum_discussion_returns() {
+        return new external_single_structure(
+            array(
+                'status' => new external_value(PARAM_BOOL, 'status: true if success'),
+                'html' => new external_value(PARAM_RAW, 'Markup of discussions'),
+                'warnings' => new external_warnings()
+            )
+        );
+    }
+
+    /**
+     * Returns description of method parameters
+     *
+     * @return external_function_parameters
+     * @since Moodle 3.6
+     */
+    public static function update_discussion_post_parameters() {
+        return new external_function_parameters(
+            array(
+            'postid' => new external_value(PARAM_INT, 'the post id we are going to reply to
+                                                (can be the initial discussion post'),
+            'subject' => new external_value(PARAM_TEXT, 'new post subject'),
+            'message' => new external_value(PARAM_RAW, 'new post message (only html format allowed)'),
+            'options' => new external_multiple_structure(
+                new external_single_structure(
+                array(
+                'name' => new external_value(PARAM_ALPHANUM, 'The allowed keys (value format) are:
+                                        discussionsubscribe (bool); subscribe to the discussion?, default to true
+                                        inlineattachmentsid              (int); the draft file area id for inline attachments
+                                        attachmentsid       (int); the draft file area id for attachments
+                            '),
+                'value' => new external_value(PARAM_RAW, 'the value of the option,
+                                                            this param is validated in the external function.'
+                )
+                )
+                ), 'Options', VALUE_DEFAULT, array())
+            )
+        );
+    }
+
+    /**
+     * Update a post of an existing discussion.
+     *
+     * @param int $postid the post id we are going to reply to
+     * @param string $subject new post subject
+     * @param string $message new post message (only html format allowed)
+     * @param array $options optional settings
+     * @return array of warnings and the new post id
+     * @since Moodle 3.6
+     * @throws moodle_exception
+     */
+    public static function update_discussion_post($postid, $subject, $message, $options = array()) {
+        global $DB, $CFG, $USER;
+        require_once($CFG->dirroot . "/mod/forum/lib.php");
+
+        $params = self::validate_parameters(self::add_discussion_post_parameters(), array(
+                'postid' => $postid,
+                'subject' => $subject,
+                'message' => $message,
+                'options' => $options
+                )
+        );
+        $warnings = array();
+
+        if (!$parent = forum_get_post_full($params['postid'])) {
+            throw new moodle_exception('invalidparentpostid', 'forum');
+        }
+
+        if (!$discussion = $DB->get_record("forum_discussions", array("id" => $parent->discussion))) {
+            throw new moodle_exception('notpartofdiscussion', 'forum');
+        }
+
+        // Request and permission validation.
+        $forum = $DB->get_record('forum', array('id' => $discussion->forum), '*', MUST_EXIST);
+        list($course, $cm) = get_course_and_cm_from_instance($forum, 'forum');
+
+        $context = context_module::instance($cm->id);
+        self::validate_context($context);
+
+        // Validate options.
+        foreach ($params['options'] as $option) {
+            $name = trim($option['name']);
+            switch ($name) {
+                case 'discussionsubscribe':
+                    $value = clean_param($option['value'], PARAM_BOOL);
+                    break;
+                case 'inlineattachmentsid':
+                    $value = clean_param($option['value'], PARAM_INT);
+                    break;
+                case 'attachmentsid':
+                    $value = clean_param($option['value'], PARAM_INT);
+                    // Ensure that the user has permissions to create attachments.
+                    if (!has_capability('mod/forum:createattachment', $context)) {
+                        $value = 0;
+                    }
+                    break;
+                case 'pinned':
+                    $value = clean_param($option['value'], PARAM_INT);
+                    break;
+                default:
+                    throw new moodle_exception('errorinvalidparam', 'webservice', '', $name);
+            }
+            $options[$name] = $value;
+        }
+
+        $post = forum_get_post_full($postid);
+        if (!($forum->type == 'news' && !$post->parent && $discussion->timestart > time())) {
+            if (((time() - $post->created) > $CFG->maxeditingtime) and ! has_capability('mod/forum:editanypost', $context)) {
+                print_error('maxtimehaspassed', 'forum', '', format_time($CFG->maxeditingtime));
+            }
+        }
+        if (($post->userid <> $USER->id) and ! has_capability('mod/forum:editanypost', $context)) {
+            print_error('cannoteditposts', 'forum');
+        }
+
+        $thresholdwarning = forum_check_throttling($forum, $cm);
+        forum_check_blocking_threshold($thresholdwarning);
+
+        // Update the post.
+        $post->subject = $params['subject'];
+        $post->message = $params['message'];
+        $post->messageformat = FORMAT_HTML;   // Force formatting for now.
+        $post->messagetrust = trusttext_trusted($context);
+        $post->itemid = $options['inlineattachmentsid'];
+        $post->deleted = 0;
+        if (isset($options['pinned'])) {
+            $post->pinned = $options['pinned'];
+        }
+
+        // For the first post we must set this because discussion will be updated
+        // in forum_update_post using this values.
+        if (!$post->parent) {
+             $post->timestart = $discussion->timestart;
+             $post->timeend = $discussion->timeend;
+        }
+
+        if (!forum_update_post($post, false)) {
+            print_error("couldnotupdate", "forum");
+        }
+
+        if (isset($options['discussionsubscribe'])) {
+            $post->discussionsubscribe = $options['discussionsubscribe'];
+            forum_post_subscription($post, $forum, $discussion);
+        }
+
+        $result = array();
+        $result['postid'] = $postid;
+        $result['warnings'] = $warnings;
+        return $result;
+    }
+
+    /**
+     * Returns description of method result value
+     *
+     * @return external_description
+     * @since Moodle 3.6
+     */
+    public static function update_discussion_post_returns() {
+        return new external_single_structure(
+            array(
+            'postid' => new external_value(PARAM_INT, 'new post id'),
+            'warnings' => new external_warnings()
+            )
+        );
+    }
+
+    /**
+     * Returns description of method parameters
+     *
+     * @return external_function_parameters
+     * @since Moodle 3.6
+     */
+    public static function get_post_inline_editor_parameters() {
+        return new external_function_parameters (
+            array(
+                'discussionid' => new external_value(PARAM_INT, 'id of discussion', VALUE_DEFAULT, 0),
+                'postid' => new external_value(PARAM_INT, 'post ID, if set post data will be returned', VALUE_DEFAULT, 0),
+                'draftideditor' => new external_value(PARAM_INT, 'draft id of the editor', VALUE_DEFAULT, 0),
+            )
+        );
+    }
+
+    /**
+     * Get all data for setting up the html editor on discussion page for existing or new
+     * post. Please note that using an inline editor we have to setup the draft files here.
+     *
+     * @param int $discussionid
+     * @param int $postid
+     * @param int $draftideditor
+     * @return array
+     * @throws moodle_exception
+     */
+    public static function get_post_inline_editor($discussionid, $postid, $draftideditor) {
+        global $CFG, $DB, $USER, $PAGE;
+
+        $warnings = array();
+
+        // Validate the parameter.
+        $params = self::validate_parameters(self::get_post_inline_editor_parameters(), array(
+                'discussionid' => $discussionid,
+                'postid' => $postid,
+                'draftideditor' => $draftideditor));
+
+        // Compact/extract functions are not recommended.
+        $discussionid = $params['discussionid'];
+        $postid = $params['postid'];
+
+        $discussion = $DB->get_record('forum_discussions', array('id' => $discussionid), '*', MUST_EXIST);
+        $forum = $DB->get_record('forum', array('id' => $discussion->forum), '*', MUST_EXIST);
+        $course = $DB->get_record('course', array('id' => $forum->course), '*', MUST_EXIST);
+        $cm = get_coursemodule_from_instance('forum', $forum->id, $course->id, false, MUST_EXIST);
+
+        // Validate the module context. It checks everything that affects the module visibility (including groupings, etc..).
+        $modcontext = context_module::instance($cm->id);
+        self::validate_context($modcontext);
+
+        // This require must be here, see mod/forum/discuss.php.
+        require_once($CFG->dirroot . "/mod/forum/lib.php");
+
+        // Check they have the view forum capability.
+        require_capability('mod/forum:viewdiscussion', $modcontext, null, true, 'noviewdiscussionspermission', 'forum');
+
+        $post = new stdClass();
+
+        if ($postid != 0) {
+
+            if (!$post = forum_get_post_full($postid)) {
+                throw new moodle_exception('notexists', 'forum');
+            }
+
+            // This function check groups, qanda, timed discussions, etc.
+            if (!forum_user_can_see_post($forum, $discussion, $post, null, $cm)) {
+                throw new moodle_exception('noviewdiscussionspermission', 'forum');
+            }
+
+            $canviewfullname = has_capability('moodle/site:viewfullnames', $modcontext);
+
+            // We will add this field in the response.
+            $canreply = forum_user_can_post($forum, $discussion, $USER, $cm, $course, $modcontext);
+
+            if (empty($post->postread)) {
+                $post->postread = false;
+            } else {
+                $post->postread = true;
+            }
+
+            $post->canreply = $canreply;
+            if (!empty($post->children)) {
+                $post->children = array_keys($post->children);
+            } else {
+                $post->children = array();
+            }
+
+            $post->deleted = false;
+
+            if (forum_is_author_hidden($post, $forum)) {
+                $post->userid = null;
+                $post->userfullname = null;
+                $post->userpictureurl = null;
+            } else {
+                $user = new stdclass();
+                $user->id = $post->userid;
+                $user = username_load_fields_from_object($user, $post, null, array('picture', 'imagealt', 'email'));
+                $post->userfullname = fullname($user, $canviewfullname);
+
+                $userpicture = new user_picture($user);
+                $userpicture->size = 1; // Size f1.
+                $post->userpictureurl = $userpicture->get_url($PAGE)->out(false);
+            }
+
+            $post->subject = external_format_string($post->subject, $modcontext->id);
+            // Rewrite embedded images URLs.
+            list($post->message, $post->messageformat) = external_format_text(
+                    $post->message, $post->messageformat, $modcontext->id, 'mod_forum', 'post', $post->id);
+
+            // List attachments.
+            if (!empty($post->attachment)) {
+                $post->attachments = external_util::get_area_files($modcontext->id, 'mod_forum', 'attachment', $post->id);
+            }
+            $messageinlinefiles = external_util::get_area_files($modcontext->id, 'mod_forum', 'post', $post->id);
+            if (!empty($messageinlinefiles)) {
+                $post->messageinlinefiles = $messageinlinefiles;
+            }
+        }
+
+        $postid = empty($post->id) ? null : $post->id;
+
+        // Rewrite plugin urls to @@PLUGINFILE@@/... form.
+        $options = mod_forum_post_form::editor_options($modcontext, $postid);
+        $options['reverse'] = true;
+        $originalmessage = file_rewrite_pluginfile_urls($post->message,
+                'pluginfile.php', $modcontext->id, 'mod_forum', 'post', $postid, $options);
+
+        // Prepare the current draft_area.
+        $currenttext = file_prepare_draft_area($draftideditor, $modcontext->id, 'mod_forum', 'post',
+                $postid, mod_forum_post_form::editor_options($modcontext, $postid), $originalmessage);
+
+        // Copy the missing files from parent post or current post (when editing) to users draft area.
+        $inlineoptions = mod_forum_post_form::editor_options($modcontext, $postid);
+        $inlineoptions['cleandraftarea'] = true;
+        mod_forum\blockquotes::copy_files_to_draft_area(
+                $draftideditor, $modcontext->id, 'mod_forum', 'post', $postid, $inlineoptions);
+
+        $result = array();
+        $result['post'] = $post;
+        $result['draftitemid'] = $draftideditor;
+        $result['currenttext'] = $currenttext;
+        $result['discussionid'] = $discussion->id;
+        $result['warnings'] = $warnings;
+        return $result;
+    }
+
+    /**
+     * Returns description of method result value
+     *
+     * @return external_single_structure
+     * @since Moodle 3.6
+     */
+    public static function get_post_inline_editor_returns() {
+        return new external_single_structure([
+            'post' => new external_single_structure([
+                'id' => new external_value(PARAM_INT, 'Post id'),
+                'discussion' => new external_value(PARAM_INT, 'Discussion id'),
+                'parent' => new external_value(PARAM_INT, 'Parent id'),
+                'userid' => new external_value(PARAM_INT, 'User id'),
+                'created' => new external_value(PARAM_INT, 'Creation time'),
+                'modified' => new external_value(PARAM_INT, 'Time modified'),
+                'mailed' => new external_value(PARAM_INT, 'Mailed?'),
+                'subject' => new external_value(PARAM_TEXT, 'The post subject'),
+                'message' => new external_value(PARAM_RAW, 'The post message'),
+                'messageformat' => new external_format_value('message'),
+                'messagetrust' => new external_value(PARAM_INT, 'Can we trust?'),
+                'messageinlinefiles' => new external_files('post message inline files', VALUE_OPTIONAL),
+                'attachment' => new external_value(PARAM_RAW, 'Has attachments?'),
+                'attachments' => new external_files('attachments', VALUE_OPTIONAL),
+                'totalscore' => new external_value(PARAM_INT, 'The post message total score'),
+                'mailnow' => new external_value(PARAM_INT, 'Mail now?'),
+                'children' => new external_multiple_structure(new external_value(PARAM_INT, 'children post id')),
+                'canreply' => new external_value(PARAM_BOOL, 'The user can reply to posts?'),
+                'postread' => new external_value(PARAM_BOOL, 'The post was read'),
+                'userfullname' => new external_value(PARAM_TEXT, 'Post author full name'),
+                'userpictureurl' => new external_value(PARAM_URL, 'Post author picture.', VALUE_OPTIONAL),
+                'deleted' => new external_value(PARAM_BOOL, 'This post has been removed.'),
+                ]),
+            'draftitemid' => new external_value(PARAM_INT, 'draft item id'),
+            'currenttext' => new external_value(PARAM_RAW, 'The post message converted to draft mode'),
+            'discussionid' => new external_value(PARAM_INT, 'Discussion id'),
+            'warnings' => new external_warnings()
+            ]);
+    }
+
 }

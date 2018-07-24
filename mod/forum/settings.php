@@ -136,5 +136,11 @@ if ($ADMIN->fulltree) {
 
     $settings->add(new admin_setting_configcheckbox('forum_enabletimedposts', get_string('timedposts', 'forum'),
                        get_string('configenabletimedposts', 'forum'), 1));
+
+    $settings->add(new admin_setting_configcheckbox('forum_enablequotedreplies', get_string('enablequotedreplies', 'forum'),
+                       get_string('configenablequotedreplies', 'forum'), 0));
+
+    $settings->add(new admin_setting_configcheckbox('forum_enableinlineediting', get_string('enableinlineediting', 'forum'),
+                       get_string('configenableinlineediting', 'forum'), 0));
 }
 

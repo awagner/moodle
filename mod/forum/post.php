@@ -27,6 +27,7 @@ require_once('lib.php');
 require_once($CFG->libdir.'/completionlib.php');
 
 $reply   = optional_param('reply', 0, PARAM_INT);
+$quote   = optional_param('quote', 0, PARAM_INT);
 $forum   = optional_param('forum', 0, PARAM_INT);
 $edit    = optional_param('edit', 0, PARAM_INT);
 $delete  = optional_param('delete', 0, PARAM_INT);
@@ -617,10 +618,33 @@ if (!empty($parent)) {
     }
 }
 
+if ($quotedreply = optional_param('quote', 0, PARAM_INT)) {
+    if ($message = $DB->get_record('forum_posts', ['id' => $post->parent])) {
+        $post->message .= $PAGE->get_renderer('mod_forum')->render_quoted_message($message->message);
+    }
+}
+if ($inlinemessage = optional_param('inlinemessage', '', PARAM_RAW)) {
+    if (!empty($inlinemessage)) {
+        $post->message = $inlinemessage;
+    }
+}
+if ($subject = optional_param('inlinesubject', '', PARAM_TEXT)) {
+    if (!empty($subject)) {
+        $post->subject = $subject;
+    }
+}
+
 $postid = empty($post->id) ? null : $post->id;
 $draftideditor = file_get_submitted_draft_itemid('message');
 $editoropts = mod_forum_post_form::editor_options($modcontext, $postid);
 $currenttext = file_prepare_draft_area($draftideditor, $modcontext->id, 'mod_forum', 'post', $postid, $editoropts, $post->message);
+
+// Editor may contain text with attached files, so we have to copy the draftfiles from parent post.
+if (($quotedreply) && ($currenttext) && (empty($inlinemessage))) {
+    // Copy files into draftarea when reply is quoted.
+    mod_forum\blockquotes::copy_files_to_draft_area($draftideditor, $modcontext->id, 'mod_forum', 'post', $post->parent,
+                                                    mod_forum_post_form::editor_options($modcontext, $post->parent));
+}
 
 $manageactivities = has_capability('moodle/course:manageactivities', $coursecontext);
 if (\mod_forum\subscriptions::subscription_disabled($forum) && !$manageactivities) {

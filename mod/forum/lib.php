@@ -2478,15 +2478,18 @@ function forum_print_post($post, $discussion, $forum, &$cm, $course, $ownpost=fa
 
     if (empty($str)) {
         $str = new stdClass;
-        $str->edit         = get_string('edit', 'forum');
-        $str->delete       = get_string('delete', 'forum');
-        $str->reply        = get_string('reply', 'forum');
+
+        $str->edit         = '<i class="fa fa-pencil-square-o" aria-hidden="true"></i> '.get_string('edit', 'forum');
+        $str->delete       = '<i class="fa fa-times" aria-hidden="true"></i> '.get_string('delete', 'forum');
+        $str->reply        = '<i class="fa fa-reply" aria-hidden="true"></i> '.get_string('reply', 'forum');
         $str->parent       = get_string('parent', 'forum');
         $str->pruneheading = get_string('pruneheading', 'forum');
         $str->prune        = get_string('prune', 'forum');
         $str->displaymode     = get_user_preferences('forum_displaymode', $CFG->forum_displaymode);
         $str->markread     = get_string('markread', 'forum');
         $str->markunread   = get_string('markunread', 'forum');
+
+        $str->quote        = '<i class="fa fa-quote-left" aria-hidden="true"></i> '.get_string('quote', 'forum');
     }
 
     $discussionlink = new moodle_url('/mod/forum/discuss.php', array('d'=>$post->discussion));
@@ -2523,7 +2526,11 @@ function forum_print_post($post, $discussion, $forum, &$cm, $course, $ownpost=fa
     // Add a permalink.
     $permalink = new moodle_url($discussionlink);
     $permalink->set_anchor('p' . $post->id);
-    $commands[] = array('url' => $permalink, 'text' => get_string('permalink', 'forum'), 'attributes' => ['rel' => 'bookmark']);
+    $commands[] = array(
+        'url' => $permalink,
+        'text' => '<i class="fa fa-link" aria-hidden="true"></i> '. get_string('permalink', 'forum'),
+        'attributes' => ['rel' => 'bookmark']
+    );
 
     // SPECIAL CASE: The front page can display a news item post to non-logged in users.
     // Don't display the mark read / unread controls in this case.
@@ -2565,7 +2572,11 @@ function forum_print_post($post, $discussion, $forum, &$cm, $course, $ownpost=fa
             $commands[] = array('url'=>new moodle_url('/course/modedit.php', array('update'=>$cm->id, 'sesskey'=>sesskey(), 'return'=>1)), 'text'=>$str->edit);
         }
     } else if (($ownpost && $age < $CFG->maxeditingtime) || $cm->cache->caps['mod/forum:editanypost']) {
-        $commands[] = array('url'=>new moodle_url('/mod/forum/post.php', array('edit'=>$post->id)), 'text'=>$str->edit);
+        $commands[] = array(
+            'url' => new moodle_url('/mod/forum/post.php', array('edit' => $post->id)),
+            'text' => $str->edit,
+            'attributes' => ['id' => 'forum-edit-' . $post->id]
+        );
     }
 
     if ($cm->cache->caps['mod/forum:splitdiscussions'] && $post->parent && $forum->type != 'single') {
@@ -2579,7 +2590,19 @@ function forum_print_post($post, $discussion, $forum, &$cm, $course, $ownpost=fa
     }
 
     if ($reply) {
-        $commands[] = array('url'=>new moodle_url('/mod/forum/post.php#mformforum', array('reply'=>$post->id)), 'text'=>$str->reply);
+        $commands[] = array(
+            'url' => new moodle_url('/mod/forum/post.php#mformforum', array('reply' => $post->id)),
+            'text' => $str->reply,
+            'attributes' => ['id' => 'forum-reply-'.$post->id]
+        );
+    }
+
+    if ($reply && \mod_forum\blockquotes::can_do_quoted_reply()) {
+        $commands[] = array(
+            'url' => new moodle_url('/mod/forum/post.php#mformforum', array('reply' => $post->id, 'quote' => 1)),
+            'text' => $str->quote,
+            'attributes' => ['id' => 'forum-quote-'.$post->id]
+        );
     }
 
     if ($CFG->enableportfolios && ($cm->cache->caps['mod/forum:exportpost'] || ($ownpost && $cm->cache->caps['mod/forum:exportownpost']))) {
@@ -2801,6 +2824,9 @@ function forum_print_post($post, $discussion, $forum, &$cm, $course, $ownpost=fa
     if ($istracked && !$CFG->forum_usermarksread && !$postisread) {
         forum_tp_mark_post_read($USER->id, $post);
     }
+
+    $class = ($post->parent) ? 'forum-post-hasparent' : '';
+    $output .= html_writer::div('', "forum-inlineform-container $class", ['id' => 'forum-inlineform-container-'.$post->id]);
 
     if ($return) {
         return $output;

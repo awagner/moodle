@@ -1248,4 +1248,154 @@ class mod_forum_external_testcase extends externallib_advanced_testcase {
         $this->assertEquals(2, $posts['ratinginfo']['ratings'][0]['count']);
         $this->assertEquals(($rating1->rating + $rating2->rating) / 2, $posts['ratinginfo']['ratings'][0]['aggregate']);
     }
+
+    /**
+     * Test render forum dicussion retrieved by AJAX.
+     */
+    public function test_mod_forum_render_forum_discussion() {
+        global $DB;
+
+        $this->resetAfterTest(true);
+        set_config('forum_enablequotedreplies', 1);
+        set_config('forum_enableinlineediting', 1);
+
+        $user1 = self::getDataGenerator()->create_user();
+
+        // Create course to add the module.
+        $course = self::getDataGenerator()->create_course();
+
+        $studentrole = $DB->get_record('role', array('shortname' => 'student'));
+        $this->getDataGenerator()->enrol_user($user1->id, $course->id, $studentrole->id, 'manual');
+
+        // Create the forum.
+        $forum = self::getDataGenerator()->create_module('forum', ['course' => $course->id]);
+
+        // Add discussion to the forum.
+        $record = new stdClass();
+        $record->course = $course->id;
+        $record->userid = $user1->id;
+        $record->forum = $forum->id;
+        $discussion = self::getDataGenerator()->get_plugin_generator('mod_forum')->create_discussion($record);
+
+        // Retrieve the first post.
+        $post = $DB->get_record('forum_posts', array('discussion' => $discussion->id));
+
+        // Retrieve rendered post by user1.
+        $this->setUser($user1);
+        $renderedpost = mod_forum_external::render_forum_discussion($discussion->id, $post->id);
+        $renderedpost = external_api::clean_returnvalue(mod_forum_external::render_forum_discussion_returns(), $renderedpost);
+
+        $this->assertEquals(1, $renderedpost['status']);
+        $this->assertContains(get_string('quote', 'forum'), $renderedpost['html']);
+        $this->assertContains(get_string('reply', 'forum'), $renderedpost['html']);
+        $this->assertContains($post->message, $renderedpost['html']);
+        $this->assertEmpty($renderedpost['warnings']);
+    }
+
+    /**
+     * Test update a forums dicussion by AJAX.
+     */
+    public function test_mod_forum_update_discussion_post() {
+        global $DB;
+
+        $this->resetAfterTest(true);
+
+        $user1 = self::getDataGenerator()->create_user();
+
+        // Create course to add the module.
+        $course = self::getDataGenerator()->create_course();
+
+        $studentrole = $DB->get_record('role', array('shortname' => 'student'));
+        $this->getDataGenerator()->enrol_user($user1->id, $course->id, $studentrole->id, 'manual');
+
+        // Create the forum.
+        $forum = self::getDataGenerator()->create_module('forum', ['course' => $course->id, 'forcesubscribe' => 0]);
+
+        // Add discussion to the forum.
+        $record = new stdClass();
+        $record->course = $course->id;
+        $record->userid = $user1->id;
+        $record->forum = $forum->id;
+        $record->subject = 'Subject';
+        $record->message = 'Message';
+        $discussion = self::getDataGenerator()->get_plugin_generator('mod_forum')->create_discussion($record);
+
+        // Retrieve the first post.
+        $post = $DB->get_record('forum_posts', array('discussion' => $discussion->id));
+        $subscription = $DB->get_record('forum_discussion_subs', ['userid' => $user1->id, 'discussion' => $discussion->id]);
+        $this->assertEmpty($subscription);
+
+        // Update post.
+        $this->setUser($user1);
+        $subject = 'Updated subject';
+        $message = 'Updated message';
+        $options = [
+            [
+                'name' => 'discussionsubscribe',
+                'value' => 1
+            ],
+            [
+                'name' => 'inlineattachmentsid', // Required parameter for assigning draft files.
+                'value' => 0
+            ]
+        ];
+
+        $result = mod_forum_external::update_discussion_post($post->id, $subject, $message, $options);
+        $result = external_api::clean_returnvalue(mod_forum_external::update_discussion_post_returns(), $result);
+        $this->assertEquals($post->id, $result['postid']);
+        $this->assertEmpty($result['warnings']);
+
+        $postupdated = $DB->get_record('forum_posts', ['id' => $post->id]);
+        $this->assertEquals($subject, $postupdated->subject);
+        $this->assertEquals($message, $postupdated->message);
+
+        $subscription = $DB->get_record('forum_discussion_subs', ['userid' => $user1->id, 'discussion' => $discussion->id]);
+        $this->assertNotEmpty($subscription);
+    }
+
+    /**
+     * Test get all params for setting up the inline editor.
+     */
+    public function test_mod_forum_get_post_inline_editor() {
+        global $DB;
+
+        $this->resetAfterTest(true);
+
+        $user1 = self::getDataGenerator()->create_user();
+
+        // Create course to add the module.
+        $course = self::getDataGenerator()->create_course();
+
+        $studentrole = $DB->get_record('role', array('shortname' => 'student'));
+        $this->getDataGenerator()->enrol_user($user1->id, $course->id, $studentrole->id, 'manual');
+
+        // Create the forum.
+        $forum = self::getDataGenerator()->create_module('forum', ['course' => $course->id, 'forcesubscribe' => 0]);
+
+        // Add discussion to the forum.
+        $record = new stdClass();
+        $record->course = $course->id;
+        $record->userid = $user1->id;
+        $record->forum = $forum->id;
+        $record->subject = 'Subject';
+        $record->message = 'Message';
+        $discussion = self::getDataGenerator()->get_plugin_generator('mod_forum')->create_discussion($record);
+
+        // Retrieve the first post.
+        $post = $DB->get_record('forum_posts', array('discussion' => $discussion->id));
+        $subscription = $DB->get_record('forum_discussion_subs', ['userid' => $user1->id, 'discussion' => $discussion->id]);
+        $this->assertEmpty($subscription);
+
+        // Get inline editor.
+        $this->setUser($user1);
+        $result = mod_forum_external::get_post_inline_editor($discussion->id, $post->id, 99999);
+        $result = external_api::clean_returnvalue(mod_forum_external::get_post_inline_editor_returns(), $result);
+        $this->assertEquals($post->id, $result['post']['id']);
+        $this->assertEquals(99999, $result['draftitemid']);
+        $this->assertEquals($post->message, $result['currenttext']);
+        $this->assertEquals($discussion->id, $result['discussionid']);
+        $this->assertEmpty($result['warnings']);
+
+    }
+
 }
