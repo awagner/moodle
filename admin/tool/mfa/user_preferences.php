@@ -43,9 +43,9 @@ if ($node = $PAGE->settingsnav->find('usercurrentsettings', null)) {
     $PAGE->navbar->add($node->get_content(), $node->action());
 }
 $PAGE->navbar->add(get_string('preferences:header', 'tool_mfa'), new \moodle_url('/admin/tool/mfa/user_preferences.php'));
-$OUTPUT = $PAGE->get_renderer('tool_mfa');
+$output = $PAGE->get_renderer('tool_mfa');
 
-echo $OUTPUT->header();
+echo $output->header();
 if (!empty($action)) {
     if ($factorid != 0) {
         $instance = \tool_mfa\plugininfo\factor::get_instance_from_id($factorid);
@@ -53,19 +53,17 @@ if (!empty($action)) {
         if ($USER->id == $instance->userid) {
             $factor = \tool_mfa\plugininfo\factor::get_factor($instance->factor);
             $string = $factor->get_display_name().' - '.$instance->label;
-            echo $OUTPUT->notification(get_string('factor'.$action, 'tool_mfa', $string), 'notifysuccess');
+            echo $output->notification(get_string('factor'.$action, 'tool_mfa', $string), 'notifysuccess');
         }
     }
 }
 
-echo $OUTPUT->available_factors();
-
-$renderer = $PAGE->get_renderer('tool_mfa');
-echo $renderer->get_support_link();
+echo $output->available_factors();
+echo $output->get_support_link();
 
 \tool_mfa\manager::display_debug_notification();
 
-echo $OUTPUT->footer();
+echo $output->footer();
 
 if (!empty($SESSION->tool_mfa_setwantsurl) && $SESSION->tool_mfa_setwantsurl
     && \tool_mfa\manager::get_total_weight() >= 100) {

@@ -77,7 +77,7 @@ switch ($action) {
 
         $PAGE->set_title(get_string('setupfactor', 'tool_mfa'));
         $PAGE->navbar->add($factorobject->get_setup_string());
-        $OUTPUT = $PAGE->get_renderer('tool_mfa');
+        $output = $PAGE->get_renderer('tool_mfa');
         $form = new setup_factor_form($currenturl, ['factorname' => $factor]);
 
         if ($form->is_submitted()) {
@@ -100,8 +100,9 @@ switch ($action) {
             }
         }
 
-        echo $OUTPUT->header();
+        echo $output->header();
         $form->display();
+        echo $output->footer();
 
         break;
 
@@ -113,7 +114,7 @@ switch ($action) {
 
         $PAGE->set_title(get_string('replacefactor', 'tool_mfa'));
         $PAGE->navbar->add($factorobject->get_setup_string());
-        $OUTPUT = $PAGE->get_renderer('tool_mfa');
+        $output = $PAGE->get_renderer('tool_mfa');
         // Use setup factor form, but pass in additional id for replacement.
         $form = new setup_factor_form($currenturl, ['factorname' => $factor, 'replaceid' => $factorid]);
 
@@ -137,8 +138,9 @@ switch ($action) {
             }
         }
 
-        echo $OUTPUT->header();
+        echo $output->header();
         $form->display();
+        echo $output->footer();
 
         break;
 
@@ -164,18 +166,17 @@ switch ($action) {
 
         $PAGE->set_title(get_string('managefactor', 'tool_mfa'));
         $PAGE->navbar->add(get_string('action:manage', 'factor_'.$factor));
-        $OUTPUT = $PAGE->get_renderer('tool_mfa');
-        echo $OUTPUT->header();
-        echo $OUTPUT->heading(get_string('managefactor', 'factor_' . $factorobject->name));
-        echo $OUTPUT->active_factors($factor);
-        echo $OUTPUT->single_button($returnurl, get_string('back'));
+        $output = $PAGE->get_renderer('tool_mfa');
+        echo $output->header();
+        echo $output->heading(get_string('managefactor', 'factor_' . $factorobject->name));
+        echo $output->active_factors($factor);
+        echo $output->single_button($returnurl, get_string('back'));
         // JS for modal confirming replace and revoke actions.
         $PAGE->requires->js_call_amd('tool_mfa/confirmation_modal', 'init', [$context->id]);
 
+        echo $output->footer();
         break;
 
     default:
         break;
 }
-
-echo $OUTPUT->footer();

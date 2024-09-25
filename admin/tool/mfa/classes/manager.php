@@ -47,12 +47,15 @@ class manager {
      * @return void
      */
     public static function display_debug_notification(): void {
-        global $OUTPUT, $PAGE;
+        global $PAGE;
 
         if (!get_config('tool_mfa', 'debugmode')) {
             return;
         }
-        $html = $OUTPUT->heading(get_string('debugmode:heading', 'tool_mfa'), 3);
+        // Use plugin renderer for output.
+        $output = $PAGE->get_renderer('tool_mfa');
+
+        $html = $output->heading(get_string('debugmode:heading', 'tool_mfa'), 3);
 
         $table = new \html_table();
         $table->head = [
@@ -107,12 +110,11 @@ class manager {
             }
 
             // Status.
-            $OUTPUT = $PAGE->get_renderer('tool_mfa');
             // If toggle has been flipped, fall to default pending badge.
             if ($weighttoggle) {
-                $state = $OUTPUT->get_state_badge('');
+                $state = $output->get_state_badge('');
             } else {
-                $state = $OUTPUT->get_state_badge($factor->get_state());
+                $state = $output->get_state_badge($factor->get_state());
             }
 
             $table->data[] = [
@@ -135,7 +137,7 @@ class manager {
             '',
             '<b>' . get_string('overall', 'tool_mfa') . '</b>',
             self::get_cumulative_weight(),
-            $OUTPUT->get_state_badge($finalstate),
+            $output->get_state_badge($finalstate),
         ];
 
         $html .= \html_writer::table($table);
