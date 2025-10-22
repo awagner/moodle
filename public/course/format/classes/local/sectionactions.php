@@ -465,54 +465,69 @@ class sectionactions extends baseactions {
         }
         $sectionid = $section->id;
 
-        // Get all sections for this course and re-order them (2 of them should now share the same section number).
-        $sections  = $DB->get_records_menu(
-            'course_sections',
-            ['course' => $this->course->id],
-            'section ASC, id ASC',
-            'id, section'
-        );
-        if (!isset($sections[$sectionid])) {
-            return false;
+        // Get an instance of the currently configured lock_factory.
+        $lockfactory = \core\lock\lock_config::get_lock_factory('core_section_moveto');
+
+        // Request a lock for the resource (wait if necessary).
+        // Prevents parallel execution of the following lines by multiple processes,
+        // especially by core_course\task\course_delete_modules tasks.
+        // If a core_course\task\course_delete_modules task does not obtain the lock, it must be retried later.
+        if (!$lock = $lockfactory->get_lock('courseid_' . $this->course->id, 60)) {
+            throw new \moodle_exception('locktimeout', '', '', null, 'core_section_moveto: courseid_' . $this->course->id);
         }
 
-        $sectionposition = $sections[$sectionid];
-        $movedsections = $this->reorder_sections($sections, $sectionposition, $targetposition);
-
-        // Update all sections. Do this in 2 steps to avoid breaking database
-        // uniqueness constraint.
-        $transaction = $DB->start_delegated_transaction();
-        foreach ($movedsections as $id => $position) {
-            if ((int) $sections[$id] !== $position) {
-                $DB->set_field('course_sections', 'section', -$position, ['id' => $id]);
-                // Invalidate the section cache by given section id.
-                \core_course\modinfo::purge_course_section_cache_by_id($this->course->id, $id);
+        try {
+            // Get all sections for this course and re-order them (2 of them should now share the same section number).
+            $sections = $DB->get_records_menu(
+                'course_sections',
+                ['course' => $this->course->id],
+                'section ASC, id ASC',
+                'id, section'
+            );
+            if (!isset($sections[$sectionid])) {
+                return false;
             }
-        }
-        foreach ($movedsections as $id => $position) {
-            if ((int) $sections[$id] !== $position) {
-                $DB->set_field('course_sections', 'section', $position, ['id' => $id]);
-                // Invalidate the section cache by given section id.
-                \core_course\modinfo::purge_course_section_cache_by_id($this->course->id, $id);
+
+            $sectionposition = $sections[$sectionid];
+            $movedsections = $this->reorder_sections($sections, $sectionposition, $targetposition);
+
+            // Update all sections. Do this in 2 steps to avoid breaking database
+            // uniqueness constraint.
+            $transaction = $DB->start_delegated_transaction();
+            foreach ($movedsections as $id => $position) {
+                if ((int) $sections[$id] !== $position) {
+                    $DB->set_field('course_sections', 'section', -$position, ['id' => $id]);
+                    // Invalidate the section cache by given section id.
+                    \core_course\modinfo::purge_course_section_cache_by_id($this->course->id, $id);
+                }
             }
-        }
+            foreach ($movedsections as $id => $position) {
+                if ((int) $sections[$id] !== $position) {
+                    $DB->set_field('course_sections', 'section', $position, ['id' => $id]);
+                    // Invalidate the section cache by given section id.
+                    \core_course\modinfo::purge_course_section_cache_by_id($this->course->id, $id);
+                }
+            }
 
-        // If we move the highlighted section itself, then just highlight the destination.
-        // Adjust the higlighted section location if we move something over it either direction.
-        $marker = null;
-        if ($sectionposition == $this->course->marker) {
-            $marker = $targetposition;
-        } else if ($sectionposition > $this->course->marker && $this->course->marker >= $targetposition) {
-            $marker = $this->course->marker + 1;
-        } else if ($sectionposition < $this->course->marker && $this->course->marker <= $targetposition) {
-            $marker = $this->course->marker - 1;
-        }
-        if ($marker !== null) {
-            $this->set_marker_internal($marker);
-        }
+            // If we move the highlighted section itself, then just highlight the destination.
+            // Adjust the higlighted section location if we move something over it either direction.
+            $marker = null;
+            if ($sectionposition == $this->course->marker) {
+                $marker = $targetposition;
+            } else if ($sectionposition > $this->course->marker && $this->course->marker >= $targetposition) {
+                $marker = $this->course->marker + 1;
+            } else if ($sectionposition < $this->course->marker && $this->course->marker <= $targetposition) {
+                $marker = $this->course->marker - 1;
+            }
+            if ($marker !== null) {
+                $this->set_marker_internal($marker);
+            }
 
-        $transaction->allow_commit();
-        rebuild_course_cache($this->course->id, true, true);
+            $transaction->allow_commit();
+        } finally {
+            rebuild_course_cache($this->course->id, true, true);
+            $lock->release();
+        }
         return true;
     }
 
