@@ -1098,44 +1098,61 @@ function move_section_to($course, $section, $destination, $ignorenumsections = f
         return false;
     }
 
-    // Get all sections for this course and re-order them (2 of them should now share the same section number)
-    if (!$sections = $DB->get_records_menu('course_sections', array('course' => $course->id),
+    // Get an instance of the currently configured lock_factory.
+    $lockfactory = \core\lock\lock_config::get_lock_factory('core_section_moveto');
+
+    // Get a new lock for the resource, wait for it if needed.
+    if (!$lock = $lockfactory->get_lock('courseid:' . $course->id, 60)) {
+        throw new \moodle_exception('cannotacquirelock', 'core', '', null, 'core_section_moveto: '.$course->id);
+    }
+
+    try {
+        \local_debugger\performance\debugger::print_debug('coursesections', 'before_get_sections', $course->id);
+
+        // Get all sections for this course and re-order them (2 of them should now share the same section number)
+        if (!$sections = $DB->get_records_menu('course_sections', array('course' => $course->id),
             'section ASC, id ASC', 'id, section')) {
-        return false;
-    }
-
-    $movedsections = reorder_sections($sections, $section, $destination);
-
-    // Update all sections. Do this in 2 steps to avoid breaking database
-    // uniqueness constraint
-    $transaction = $DB->start_delegated_transaction();
-    foreach ($movedsections as $id => $position) {
-        if ((int) $sections[$id] !== $position) {
-            $DB->set_field('course_sections', 'section', -$position, ['id' => $id]);
-            // Invalidate the section cache by given section id.
-            course_modinfo::purge_course_section_cache_by_id($course->id, $id);
+            return false;
         }
-    }
-    foreach ($movedsections as $id => $position) {
-        if ((int) $sections[$id] !== $position) {
-            $DB->set_field('course_sections', 'section', $position, ['id' => $id]);
-            // Invalidate the section cache by given section id.
-            course_modinfo::purge_course_section_cache_by_id($course->id, $id);
+
+        \local_debugger\performance\debugger::print_debug('coursesections', 'before_reorder_sections', $course->id);
+        $movedsections = reorder_sections($sections, $section, $destination);
+        \local_debugger\performance\debugger::print_debug('coursesections', 'before_delegated_transaction', $course->id);
+
+        // Update all sections. Do this in 2 steps to avoid breaking database
+        // uniqueness constraint
+        $transaction = $DB->start_delegated_transaction();
+
+        \local_debugger\performance\debugger::print_debug('coursesections', 'first_loop', $course->id);
+        foreach ($movedsections as $id => $position) {
+            if ((int)$sections[$id] !== $position) {
+                $DB->set_field('course_sections', 'section', -$position, ['id' => $id]);
+            }
         }
-    }
+        \local_debugger\performance\debugger::print_debug('coursesections', 'second_loop', $course->id);
+        foreach ($movedsections as $id => $position) {
+            if ((int)$sections[$id] !== $position) {
+                $DB->set_field('course_sections', 'section', $position, ['id' => $id]);
+            }
+        }
 
-    // If we move the highlighted section itself, then just highlight the destination.
-    // Adjust the higlighted section location if we move something over it either direction.
-    if ($section == $course->marker) {
-        course_set_marker($course->id, $destination);
-    } else if ($section > $course->marker && $course->marker >= $destination) {
-        course_set_marker($course->id, $course->marker+1);
-    } else if ($section < $course->marker && $course->marker <= $destination) {
-        course_set_marker($course->id, $course->marker-1);
-    }
+        // If we move the highlighted section itself, then just highlight the destination.
+        // Adjust the higlighted section location if we move something over it either direction.
+        if ($section == $course->marker) {
+            course_set_marker($course->id, $destination);
+        } else if ($section > $course->marker && $course->marker >= $destination) {
+            course_set_marker($course->id, $course->marker + 1);
+        } else if ($section < $course->marker && $course->marker <= $destination) {
+            course_set_marker($course->id, $course->marker - 1);
+        }
+        \local_debugger\performance\debugger::print_debug('coursesections', 'allow_commit', $course->id);
+        $transaction->allow_commit();
+        \local_debugger\performance\debugger::print_debug('coursesections', 'rebuild_course_cache', $course->id);
 
-    $transaction->allow_commit();
-    rebuild_course_cache($course->id, true, true);
+    } finally {
+        $lock->release();
+        rebuild_course_cache($course->id, true, true);
+    }
     return true;
 }
 
