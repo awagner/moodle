@@ -94,6 +94,6 @@ class course_delete_modules extends \core\task\adhoc_task {
      * @return boolean
      */
     public function retry_until_success(): bool {
-        return false;
+        return true;
     }
 }
