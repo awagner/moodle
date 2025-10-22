@@ -136,12 +136,28 @@ function subsection_delete_instance($id) {
     }
 
     $cm = get_coursemodule_from_instance(manager::MODULE, $id);
-    $delegatesection = get_fast_modinfo($cm->course)->get_section_info_by_component(manager::PLUGINNAME, $id);
-    if ($delegatesection) {
-        formatactions::section($cm->course)->delete($delegatesection);
+    // Get an instance of the currently configured lock_factory.
+    $lockfactory = \core\lock\lock_config::get_lock_factory('core_subsection_delete_instance');
+
+    // Request a lock for the resource (wait if necessary).
+    // Prevents parallel execution of the following lines by multiple processes,
+    // especially by core_course\task\course_delete_modules tasks.
+    // If a core_course\task\course_delete_modules task does not obtain the lock, it must be retried later.
+    if (!$lock = $lockfactory->get_lock('courseid_' . $cm->course, 60)) {
+        throw new \moodle_exception('locktimeout', '', '', null, 'core_subsection_delete_instance: courseid_' . $cm->course);
     }
 
-    $DB->delete_records('subsection', ['id' => $id]);
+    try {
+        $delegatesection = get_fast_modinfo($cm->course)->get_section_info_by_component(manager::PLUGINNAME, $id);
+        if ($delegatesection) {
+            formatactions::section($cm->course)->delete($delegatesection);
+        }
+        $DB->delete_records('subsection', ['id' => $id]);
+    } finally {
+        // Always release the lock.
+        rebuild_course_cache($cm->course, true);
+        $lock->release();
+    }
 
     return true;
 }
