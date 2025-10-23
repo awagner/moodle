@@ -1100,6 +1100,8 @@ final class courselib_test extends advanced_testcase {
      * @return void
      */
     public function test_move_section_with_section_cache(): void {
+        global $DB;
+
         $this->resetAfterTest();
         $this->setAdminUser();
         $cache = cache::make('core', 'coursemodinfo');
@@ -1125,19 +1127,25 @@ final class courselib_test extends advanced_testcase {
         $this->assertArrayHasKey($numberedsections[2]->id, $sectioncaches);
         $this->assertArrayHasKey($numberedsections[3]->id, $sectioncaches);
 
+        $oldcoursecacherev = $DB->get_field('course', 'cacherev', ['id' => $course->id]);
+
         // Move section.
         move_section_to($course, 2, 3);
-        // Get the course modinfo cache.
-        $coursemodinfo = $cache->get_versioned($course->id, $course->cacherev);
-        // Get the section cache.
-        $sectioncaches = $coursemodinfo->sectioncache;
 
-        // Make sure that we will have 2 section caches left.
-        $this->assertCount(2, $sectioncaches);
-        $this->assertArrayHasKey($numberedsections[0]->id, $sectioncaches);
-        $this->assertArrayHasKey($numberedsections[1]->id, $sectioncaches);
-        $this->assertArrayNotHasKey($numberedsections[2]->id, $sectioncaches);
-        $this->assertArrayNotHasKey($numberedsections[3]->id, $sectioncaches);
+        // Verify that course cacherev has been updated.
+        $newcacherev = $DB->get_field('course', 'cacherev', ['id' => $course->id]);
+        $this->assertEquals($oldcoursecacherev + 1, $newcacherev);
+
+        // Check correctness of section cache after move.
+        $sectionorder = $DB->get_records_menu('course_sections', ['course' => $course->id], '', 'id,section');
+
+        $modinfo = get_fast_modinfo($course->id);
+        $numberedsections = $modinfo->get_section_info_all();
+        $sectioncacheorder = [];
+        foreach($numberedsections as $section) {;
+            $sectioncacheorder[$section->id] = $section->section;
+        }
+        $this->assertEquals($sectionorder, $sectioncacheorder);
     }
 
     /**
