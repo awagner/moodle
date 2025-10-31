@@ -1123,15 +1123,18 @@ function move_section_to($course, $section, $destination, $ignorenumsections = f
             'id, section'
         );
         if (!$sections) {
+            rebuild_course_cache($course->id, true);
             $lock->release();
             return false;
         }
 
         // Reorder sections may return false here, if the origin $section (number not id)
         // we want to move to, is not found. In this case the section object to move is unknown,
-        // so we have to do an early exit here.
+        // so we have to do an early exit here. This also means that the course cache is probably
+        // inconsistent.
         $movedsections = reorder_sections($sections, $section, $destination);
         if (!$movedsections) {
+            rebuild_course_cache($course->id, true);
             $lock->release();
             return false;
         }
@@ -1162,8 +1165,8 @@ function move_section_to($course, $section, $destination, $ignorenumsections = f
 
         $transaction->allow_commit();
     } finally {
-        $lock->release();
         rebuild_course_cache($course->id, true);
+        $lock->release();
     }
     return true;
 }
