@@ -146,6 +146,45 @@ function subsection_delete_instance($id) {
     return true;
 }
 
+function subsection_delete_instance_modified($id) {
+    global $DB;
+
+    $exists = $DB->get_record('subsection', ['id' => $id]);
+    if (!$exists) {
+        return false;
+    }
+    $cm = get_coursemodule_from_instance(manager::MODULE, $id);
+    \local_debugger\performance\debugger::print_debug('subsection', 'delete_instance_start', $cm->course.'-'.$cm->id);
+    \local_debugger\performance\debugger::print_debug('subsection', 'delete_instance_before_section', $cm->course.'-'.$cm->id);
+
+    // Get an instance of the currently configured lock_factory.
+    $lockfactory = \core\lock\lock_config::get_lock_factory('core_subsection_delete_instance');
+
+    // Request a lock for the resource (wait if necessary).
+    // Prevents parallel execution of the following lines by multiple processes,
+    // especially by core_course\task\course_delete_modules tasks.
+    // If a core_course\task\course_delete_modules task does not obtain the lock, it must be retried later.
+    if (!$lock = $lockfactory->get_lock('courseid_' . $cm->course, 60)) {
+        throw new \moodle_exception('locktimeout', '', '', null, 'core_subsection_delete_instance: courseid_' . $cm->course);
+    }
+
+    try {
+        $delegatesection = get_fast_modinfo($cm->course)->get_section_info_by_component(manager::PLUGINNAME, $id);
+        if ($delegatesection) {
+            formatactions::section($cm->course)->delete($delegatesection);
+        }
+        \local_debugger\performance\debugger::print_debug('subsection', 'delete_instance_after_section', $cm->course.'-'.$cm->id);
+        $DB->delete_records('subsection', ['id' => $id]);
+        \local_debugger\performance\debugger::print_debug('subsection', 'delete_instance_end', $cm->course.'-'.$cm->id);
+    } finally {
+        // Always release the lock.
+        // Probably not needed, but just in case.
+        rebuild_course_cache($cm->course, true);
+        $lock->release();
+    }
+    return true;
+}
+
 /**
  * Returns the lists of all browsable file areas within the given module context.
  *

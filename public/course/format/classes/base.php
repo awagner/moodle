@@ -1805,7 +1805,9 @@ abstract class base {
             // Not possible to delete section if sections are not used.
             return false;
         }
+        // Note: $sectionornum is populated from the course cache and may be invalid here.
         if (is_object($sectionornum)) {
+            \local_debugger\performance\debugger::print_debug('subsection', 'sectioninfo_from_cache', $this->get_courseid().'-'.$sectionornum->id);;
             $section = $sectionornum;
         } else {
             $section = $DB->get_record(
@@ -1823,7 +1825,7 @@ abstract class base {
         }
 
         $course = $this->get_course();
-
+        \local_debugger\performance\debugger::print_debug('subsection', 'delete_section_start', $course->id.'-'.$section->id);;
         // Remove the marker if it points to this section.
         if ($section->section == $course->marker) {
             course_set_marker($course->id, 0);
@@ -1837,6 +1839,7 @@ abstract class base {
             $this->get_format_options());
         $decreasenumsections = $courseformathasnumsections && ($section->section <= $course->numsections);
 
+        \local_debugger\performance\debugger::print_debug('subsection', 'before_move_section', $course->id.'-'.$section->id);
         // Move the section to the end.
         move_section_to($course, $section->section, $lastsection, true);
 
@@ -1848,11 +1851,13 @@ abstract class base {
         // Delete section and it's format options.
         $DB->delete_records('course_format_options', array('sectionid' => $section->id));
         $DB->delete_records('course_sections', array('id' => $section->id));
+
+        \local_debugger\performance\debugger::print_debug('subsection', 'before_purge_course_section_cache_by_id', $course->id.'-'.$section->id);
         // Invalidate the section cache by given section id.
         course_modinfo::purge_course_section_cache_by_id($course->id, $section->id);
         // Partial rebuild section cache that has been purged.
         rebuild_course_cache($course->id, true, true);
-
+        \local_debugger\performance\debugger::print_debug('subsection', 'after_purge_course_section_cache_by_id', $course->id.'-'.$section->id);
         // Delete section summary files.
         $context = \context_course::instance($course->id);
         $fs = get_file_storage();
