@@ -322,7 +322,7 @@ class stateactions {
                     $updates->add_cm_remove($cm->id);
                 }
             }
-            course_delete_section($course, $section, true, true);
+            course_delete_section($course, $section);
             $updates->add_section_remove($sectionid);
         }
 

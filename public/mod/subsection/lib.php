@@ -127,7 +127,7 @@ function subsection_update_instance($moduleinstance, $mform = null) {
  * @param int $id Id of the module instance.
  * @return bool True if successful, false on failure.
  */
-function subsection_delete_instance($id) {
+function subsection_delete_instance_org_with_log($id) {
     global $DB;
 
     $exists = $DB->get_record('subsection', ['id' => $id]);
@@ -136,17 +136,20 @@ function subsection_delete_instance($id) {
     }
 
     $cm = get_coursemodule_from_instance(manager::MODULE, $id);
+    \local_debugger\performance\debugger::print_debug('subsection', 'delete_instance_start', $cm->course.'-'.$cm->id);
+    \local_debugger\performance\debugger::print_debug('subsection', 'delete_instance_before_section', $cm->course.'-'.$cm->id);
     $delegatesection = get_fast_modinfo($cm->course)->get_section_info_by_component(manager::PLUGINNAME, $id);
     if ($delegatesection) {
         formatactions::section($cm->course)->delete($delegatesection);
     }
-
+    \local_debugger\performance\debugger::print_debug('subsection', 'delete_instance_after_section', $cm->course.'-'.$cm->id);
     $DB->delete_records('subsection', ['id' => $id]);
+    \local_debugger\performance\debugger::print_debug('subsection', 'delete_instance_end', $cm->course.'-'.$cm->id);
 
     return true;
 }
 
-function subsection_delete_instance_modified($id) {
+function subsection_delete_instance($id) {
     global $DB;
 
     $exists = $DB->get_record('subsection', ['id' => $id]);

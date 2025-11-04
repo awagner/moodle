@@ -64,6 +64,14 @@ class format_topics extends core_courseformat\base {
      */
     public function get_section_name($section) {
         $section = $this->get_section($section);
+        if (!$section) {
+            // Hack (MBS-10419): get more info about the error.
+            ob_start();
+            debug_print_backtrace(15);
+            $debuginfo = ob_get_contents();
+            echo $debuginfo;
+            \local_debugger\performance\debugger::print_debug('subsection', 'get_default_section_name', $debuginfo);
+        }
         if ((string)$section->name !== '') {
             return format_string($section->name, true,
                 ['context' => context_course::instance($this->courseid)]);
@@ -83,6 +91,14 @@ class format_topics extends core_courseformat\base {
      */
     public function get_default_section_name($section) {
         $section = $this->get_section($section);
+        if (!$section) {
+            // Hack (MBS-10419): get more info about the error.
+            ob_start();
+            debug_print_backtrace(15);
+            $debuginfo = ob_get_contents();
+            echo $debuginfo;
+            \local_debugger\performance\debugger::print_debug('subsection', 'get_default_section_name', $debuginfo);
+        }
         if ($section->sectionnum == 0) {
             return get_string('section0name', 'format_topics');
         }
